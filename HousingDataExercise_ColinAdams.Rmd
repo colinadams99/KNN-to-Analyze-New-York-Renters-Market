@@ -1,0 +1,436 @@
+---
+title: "Where Should New York Renters Look?"
+subtitle: "Housing Data Exercise"
+author: "Colin Adams"
+date: "09/25/22"
+output:
+  pdf_document:
+    highlight: haddock
+keep_tex: no
+number_sections: no
+html_document:
+  df_print: paged
+geometry: margin = 0.5in
+header-includes:
+- \usepackage{booktabs}
+- \usepackage{longtable}
+- \usepackage{array}
+- \usepackage{multirow}
+- \usepackage{wrapfig}
+- \usepackage{float}
+- \usepackage{colortbl}
+- \usepackage{pdflscape}
+- \usepackage{tabu}
+- \usepackage{threeparttable}
+- \usepackage{threeparttablex}
+- \usepackage[normalem]{ulem}
+- \usepackage{makecell}
+- \usepackage{xcolor}
+editor_options:
+  chunk_output_type: console
+documentclass: article
+urlcolor: blue
+---
+  
+<!-- The above is set to automatically compile to a .pdf file.   -->
+<!-- It will only succeed if LaTeX is installed. -->
+  
+<!-- If you absolutely can't get LaTeX installed and/or working, then you can compile to a .html first,  -->
+<!-- by clicking on the arrow button next to knit and selecting Knit to HTML. -->
+
+<!-- You must then print you .html file to a .pdf by using first opening it in a web browser and then printing to a .pdf -->
+
+
+```{r setup, include=FALSE}
+# This is the setup chunk
+#  Here you can set global options for the entire document
+
+library(knitr) # I recommend doing this here
+
+# Although you can call functions from a library using the following notation
+#  without loading the entire library.
+knitr::opts_chunk$set(echo = TRUE, 
+                      comment = NA, # Required
+                      fig.path = "./figures/",  # Store all figures here in relative path (make the folder first)
+                      fig.align = "center",
+                      fig.width = 7,
+                      fig.height = 7,
+                      message = FALSE, # Turn off load messages
+                      warning = FALSE # Turn off warnings
+                      )
+
+```
+
+\clearpage
+
+```{r include=FALSE}
+# You should not echo this chunk.
+# include=FALSE does more than echo=FALSE, it actually does: echo=FALSE, results='hide', message=FALSE, warning=FALSE, fig.show='hide'
+
+# You should set your working directory at the very beginning of your R Markdown file
+# setwd("~/Dropbox/teaching/FA2020/CMDA_4654/homework/homework1/")
+
+# In linux ~/ is shorthand for /home/username/
+# You should type things out properly for your system
+# Mac: /Users/username/Documents/CMDA4654/Lectures/Lecture_03/.../
+# Windows: C:/Users/username/Documents/etc/Lecture/Lecture_03/.../
+
+library(xtable)
+library(kableExtra)
+library(tidyverse)
+library(tidyr)
+library(pander)
+library(ggplot2)
+library(ggthemes)
+library(psych)
+library(MASS)
+library(here)
+library(readr)
+library(FNN)
+library(kknn)
+library(corrplot)
+library(gmodels)
+library(caret)
+```
+
+<!-- ---------------------------------------------------------------------------------------------------- -->
+<!-- ---------------- Homework Problems start below these lines ----------------------------------------- -->
+<!-- ---------------------------------------------------------------------------------------------------- -->
+
+
+# 1. Data Introduction
+
+The data I have chosen follows listing prices of units in different New York City neighborhoods along with many features of the unit. The data falls under in the Housing market.
+
+* Originally obtained the data from https://github.com/Codecademy/datasets/tree/master/streeteasy.
+* Link to original dataset: https://drive.google.com/file/d/1JpquBHuVTaBsCM53XSGip51hSnvzQmSj/view
+* Link to cleaned dataset: https://drive.google.com/file/d/1Z3zeL9CWym07VOg59Hue8iYX4BoHFBv_/view
+
+This data is important for those who are looking to rent/purchase units in New York, to investigate what they should be looking for. In addition, it is important for those moving to New York to find out which area suits them the best.
+
+### Variable Dictionary:
+
+* **rental_id**: Rental ID
+* **building_id**: Building ID
+* **rent**: Cost of rent (in USD)
+* **bedrooms**: Number of bedrooms
+* **size_sqft**: Size of the rental listing in square-footage
+* **min_to_subway**: Time it takes to get to the subway (in minutes)
+* **floor**: The number of floors
+* **building_age_yrs**: Age of the listing's building (in years)
+* **no_fee**: Does it have a broker fee? ("1" = yes , "0" = no)
+* **has_roofdeck**: Does it have a roof deck? ("1" = yes , "0" = no)
+* **has_washer_dryer**: Does it have a washer/dryer in the unit? ("1" = yes , "0" = no)
+* **has_doorman**: Does the building have a doorman? ("1" = yes , "0" = no)
+* **has_elevator**: Does the building have an elevator? ("1" = yes , "0" = no)
+* **has_dishwasher**: Does the listing come with a dishwasher? ("1" = yes , "0" = no)
+* **has_patio**: Does the unit have a patio? ("1" = yes , "0" = no)
+* **has_gym**: Does the building have a gym? ("1" = yes , "0" = no)
+* **neighborhood**: The neighborhood where the unit is located.
+* **submarket**: The submarket where the unit is located.
+* **borough**: The borough where the unit is located.
+
+
+#### Glancing at the dataset.
+
+```{r, echo = FALSE}
+# setting object to data url
+data_url = "https://raw.githubusercontent.com/Codecademy/datasets/master/streeteasy/streeteasy.csv"
+
+# importing the dataset
+street_easy <- read_csv(url(data_url))
+
+# viewing data
+street_easy %>% head()
+
+# removing the na values for neighborhood, burrow, etc.
+street_easy <- subset(street_easy, !is.na(borough) & !is.na(submarket) & !is.na(neighborhood))
+
+```
+
+\newpage
+
+# 2. Analysis & Discussion
+
+According to Manhattan Miami Real Estate, location is most important when purchasing an apartment in NYC, and it tops amenities. While a great location is great, not many people are able to afford living in such an expensive city, and many people live in very tiny, closet-sized studio apartments.
+
+### Where should movers look for a roomy apartment?
+
+# 2.1 Summary Statistics
+
+### Summary of each variable in the dataset.
+
+#### 3.1.1 Figure 1:
+```{r, echo = FALSE}
+street_easy %>% summary() %>% pander()
+```
+
+
+To start, let's create a new variable to find out which apartments utilize space the best for the price. A new variable will be created to determine the square-feet per dollar of each unit.
+
+### 2.1.2 Figure 2 - Summary Statistics on Square-Feet per Dollar:
+```{r, echo = FALSE}
+
+# new var - sqft per dollar
+street_easy$sqft_per_dollar <- (street_easy$size_sqft / street_easy$rent)
+
+# summary of data
+street_easy$sqft_per_dollar %>% summary() %>% pander()
+
+```
+
+The table above shows us the statistics of the sqft per dollar of each listing unit. We can place these values into three different categories based off their values: "Expensive" (0) , "Average" (1) , "Bargain" (2). "Expensive" denotes a sqft per dollar value that is below the first quartile. "Average" denotes a sqft per dollar value between the first and third quartiles. "Bargain" denotes a sqft per dollar value that is greater than the third quartile, meaning that you are getting a lot of space for the price you are paying. 
+
+Now let's look at the average square-feet per dollar value of each location.
+
+### 2.1.3 Figure 3:
+```{r, echo = FALSE}
+# aggregating the mean for each submarket
+agg_submarket <- aggregate(street_easy,
+                           by = list(street_easy$submarket),
+                           FUN = mean)
+agg_submarket$Borough <- c('Manhattan', 'Manhattan', 'Manhattan', 'Manhattan', 'Manhattan', 'Queens', 'Brooklyn', 
+                           'Brooklyn', 'Queens', 'Brooklyn', 'Queens', 'Brooklyn', 'Brooklyn', 'Queens', 'Queens')
+
+# plotting avg sqft per dollar vs. submarket
+ggplot(data = agg_submarket,
+       aes(x = Group.1, y = sqft_per_dollar, fill = Borough)) +
+  geom_bar(stat = "identity", color = 'black') +
+  labs(title = 'Average Sq-ft per Dollar by Submarket', x = 'Submarket', y = 'Avg Sq-ft per Dollar') +
+  theme_bw() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+                                  legend.position = 'right', plot.title = element_text(hjust = 0.5),
+                                  axis.title = element_text(face="bold"), 
+                                  legend.title = element_text(face="bold")) + 
+  guides(fill = guide_legend(override.aes = list(colour = "black"))) + 
+  scale_fill_brewer(palette="Pastel1")
+
+```
+
+From the plot above, we see that Manhattan, on average, has smaller units for the price in comparison to Brooklyn and Queens. The submarkets of Brooklyn and Queens are generally close, however Queens submarkets tend to give a slightly roomier unit for the price. 
+
+
+```{r, echo = FALSE}
+# Creating a new categorical variable based off of the sqft per dollar
+# This will categorize the data based on the size of the unit you are getting for the price
+# 0 = expensive , 1 = average , 2 = bargain
+street_easy <- street_easy %>% mutate(
+  bargain = if_else(street_easy$sqft_per_dollar < 0.1714, 0, 
+                    if_else(street_easy$sqft_per_dollar >= 0.1714 & street_easy$sqft_per_dollar <= 0.2574, 
+                            1, 2)))
+```
+
+
+While roomier apartments are beneficial for living conditions, outdated apartments may be a deal breaker for movers. We can now inspect the age of the building that each apartment is in based on it's location.
+
+### 2.1.4 Figure 4:
+```{r, echo = FALSE}
+
+ggplot(data = street_easy, aes(x = borough, y = building_age_yrs)) + geom_boxplot(fill = 'lightsteelblue', ) + theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", color = 'black'),
+        axis.title = element_text(face="bold", color = 'black'),
+        legend.title = element_text(face='bold')) + labs(x = 'Borough', y = 'Building Age (Years)', title = 'Building Age by Boroguh')
+
+```
+
+
+From the boxplot above, we can see that on average, Brooklyn has the oldest buildings but has a lot of variability. Manhattan, on average, has the newest buildings. When renting a place to live in New York, size does matter, however, some of the units with a large square footage may be outdated. 
+
+\newpage
+# 2.2 KNN Classification
+
+**Can the location of a unit be predicted based on the square-footage and age of the unit?**
+
+To to create this model, KNN will be performed with the variables "building_age_yrs" and "sqft_per_dollar" being used to predict which borough the unit is located in.
+
+```{r, echo = FALSE}
+
+# We'll subset the data into an approximately 70%/30% training/testing split
+index <- sample(1:nrow(street_easy), round(nrow(street_easy) * 0.7))
+training_df <- street_easy[index, ]
+testing_df <- street_easy[-index, ]
+
+# Store the training/testing data features
+train_features <- training_df[, c(9,22)]
+test_features <- testing_df[, c(9,22)]
+
+# Store the actual labels
+train_classes <- training_df$borough
+test_classes <- testing_df$borough
+
+```
+
+### 2.2.1 Figure 5
+```{r, echo = FALSE}
+# Plot the training data and the testing points
+p1 <- ggplot(training_df, aes(x = building_age_yrs, y = sqft_per_dollar, color = borough)) + geom_point() + theme_bw() +
+geom_point(data = testing_df, aes(x = building_age_yrs, y = sqft_per_dollar), color = "black", pch = 5, size = 3) + 
+  labs(x = 'Building Age (in Years)', y = 'Sqft per Dollar', title = 'Training Data & Testing Points') +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", color = 'black'),
+        axis.title = element_text(face="bold", color = 'black'),
+        legend.title = element_text(face='bold'))
+                                                                                                       
+p1
+```
+
+A value of k = 23 will be used (square-root of 5000 rows of data).
+
+```{r, echo = FALSE}
+# knn with k = 23 (square root of 5000 rounded)
+street_knn_classes <- knn(train = train_features, test = test_features,
+cl = train_classes, k = 70)
+
+
+# Show the confusion matrix
+CrossTable(x = street_knn_classes, y = test_classes, prop.chisq = FALSE, prop.t = F, prop.r = F)
+
+# confusion matrix
+confusionMatrix(data = street_knn_classes, reference = as.factor(test_classes))
+```
+
+Based on the results of the model, we can accurately predict the borough of a NYC listing unit with **79.47% accuracy** based on its square-feet per dollar and the age of its building. Manhattan and Brooklyn were the most frequently mistaken boroughs for this model. This model tells us that the best "bang for your buck" will likely depend on which borough you decide to rent from. While Queens typically has a larger amount of space for the price, the age of the building is generally not as old as those in Brooklyn. Manhattan has the worst average sqft per dollar, however the buildings are newer on average. Brooklyn has a similar avg sqft per dollar to Queens, however the building age has a lot of variability with a very large average value.
+
+While there are numerous factors to consider when living in New York City, it appears that Queens would likely be the best place to rent a home based solely on the age of the building and the space you are able to get for the price.
+
+\newpage
+
+# 3. Citations
+
+* ManhattanMiami Real Estate: https://www.manhattanmiami.com/resources/buying-an-apartment-in-nyc
+* https://github.com/Codecademy/datasets/tree/master/streeteasy
+* http://www.cookbook-r.com/Graphs/Colors_(ggplot2)/
+
+\newpage
+
+# 4. Appendix
+
+#### DATA IMPORT:
+```{r, eval = FALSE}
+
+
+# setting object to data url
+data_url = "https://raw.githubusercontent.com/Codecademy/datasets/master/streeteasy/streeteasy.csv"
+
+# importing the dataset
+street_easy <- read_csv(url(data_url))
+
+# viewing data
+street_easy %>% head()
+
+# removing the na values for neighborhood, burrow, etc.
+street_easy <- subset(street_easy, !is.na(borough) & !is.na(submarket) & !is.na(neighborhood))
+
+```
+
+#### FIGURE 1:
+
+```{r, eval = FALSE}
+
+street_easy %>% summary() %>% pander()
+```
+
+#### FIGURE 2:
+
+```{r, eval = FALSE}
+
+# new var: sqft per dollar
+street_easy$sqft_per_dollar <- (street_easy$size_sqft / street_easy$rent)
+
+# summary of new variable
+street_easy$sqft_per_dollar %>% summary() %>% pander()
+```
+
+#### FIGURE 3:
+
+```{r, eval = FALSE}
+
+# aggregating the mean for each submarket
+agg_submarket <- aggregate(street_easy,
+                           by = list(street_easy$submarket),
+                           FUN = mean)
+agg_submarket$Borough <- c('Manhattan', 'Manhattan', 'Manhattan', 'Manhattan', 'Manhattan', 'Queens', 'Brooklyn', 
+                           'Brooklyn', 'Queens', 'Brooklyn', 'Queens', 'Brooklyn', 'Brooklyn', 'Queens', 'Queens')
+
+# plotting avg sqft per dollar vs. submarket
+ggplot(data = agg_submarket,
+       aes(x = Group.1, y = sqft_per_dollar, fill = Borough)) +
+  geom_bar(stat = "identity", color = 'black') +
+  labs(title = 'Average Sq-ft per Dollar by Submarket', x = 'Submarket', y = 'Avg Sq-ft per Dollar') +
+  theme_bw() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+                                  legend.position = 'right', plot.title = element_text(hjust = 0.5),
+                                  axis.title = element_text(face="bold"), 
+                                  legend.title = element_text(face="bold")) + 
+  guides(fill = guide_legend(override.aes = list(colour = "black"))) + 
+  scale_fill_brewer(palette="Pastel1")
+
+```
+
+#### NEW VARIABLE:
+
+```{r, eval = FALSE}
+
+# Creating a new categorical variable based off of the sqft per dollar
+# This will categorize the data based on the size of the unit you are getting for the price
+# 0 = expensive , 1 = average , 2 = bargain
+street_easy <- street_easy %>% mutate(
+  bargain = if_else(street_easy$sqft_per_dollar < 0.1714, 0, 
+                    if_else(street_easy$sqft_per_dollar >= 0.1714 & street_easy$sqft_per_dollar <= 0.2574, 
+                            1, 2)))
+```
+
+#### FIGURE 4:
+
+```{r, eval = FALSE}
+
+ggplot(data = street_easy, aes(x = borough, y = building_age_yrs)) + geom_boxplot(fill = 'lightsteelblue', ) + theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", color = 'black'),
+        axis.title = element_text(face="bold", color = 'black'),
+        legend.title = element_text(face='bold')) + labs(x = 'Borough', y = 'Building Age (Years)', title = 'Building Age by Boroguh')
+```
+
+#### KNN SETUP:
+```{r, eval = FALSE}
+
+# subsetting the data into an approximately 70%/30% training/testing split
+index <- sample(1:nrow(street_easy), round(nrow(street_easy) * 0.7))
+training_df <- street_easy[index, ]
+testing_df <- street_easy[-index, ]
+
+# Storing the training/testing data features
+train_features <- training_df[, c(9,22)]
+test_features <- testing_df[, c(9,22)]
+
+# Storing the actual labels
+train_classes <- training_df$borough
+test_classes <- testing_df$borough
+```
+
+
+#### FIGURE 5:
+```{r, eval = FALSE}
+
+
+p1 <- ggplot(training_df, aes(x = building_age_yrs, y = sqft_per_dollar, color = borough)) + geom_point() + theme_bw() +
+geom_point(data = testing_df, aes(x = building_age_yrs, y = sqft_per_dollar), color = "black", pch = 5, size = 3) + 
+  labs(x = 'Building Age (in Years)', y = 'Sqft per Dollar', title = 'Training Data & Testing Points') +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", color = 'black'),
+        axis.title = element_text(face="bold", color = 'black'),
+        legend.title = element_text(face='bold'))
+                                                                                                       
+p1
+```
+
+#### KNN RESULTS:
+
+```{r, eval = FALSE}
+
+# knn with k = 23 (square root of 5000 rounded)
+street_knn_classes <- knn(train = train_features, test = test_features,
+cl = train_classes, k = 23)
+
+
+# Show the confusion matrix
+CrossTable(x = street_knn_classes, y = test_classes, prop.chisq = FALSE, prop.t = F, prop.r = F)
+
+# confusion matrix
+confusionMatrix(data = street_knn_classes, reference = as.factor(test_classes))
+```
